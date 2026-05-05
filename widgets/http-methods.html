@@ -24,27 +24,31 @@
     window.open(url, '_blank', 'noopener');
   };
 
-  /* Auto-resize: broadcast scrollHeight to parent on every layout change.
-     Parent (Roam roam/js, etc.) can listen and update the iframe's height. */
+  /* Auto-resize: broadcast the actual content height to parent on layout change.
+     We measure the content wrapper, NOT body/html (those echo the iframe size
+     back via 100vh/100% and create a feedback loop). */
   window.addEventListener('load', function () {
+    var wrap = document.getElementById('__widget_root') || document.body;
     var lastH = 0;
     function emit() {
-      var h = Math.max(
-        document.documentElement.scrollHeight,
-        document.body.scrollHeight
-      );
-      if (h !== lastH) {
-        lastH = h;
-        parent.postMessage({ type: 'claude-widget-resize', height: h, src: location.href }, '*');
-      }
+      // getBoundingClientRect().height is layout-accurate and not affected by
+      // any "min-height: 100vh" cascading from parent-driven viewport changes.
+      var rect = wrap.getBoundingClientRect();
+      var h = Math.ceil(rect.height) +
+              parseFloat(getComputedStyle(document.body).paddingTop) +
+              parseFloat(getComputedStyle(document.body).paddingBottom);
+      if (Math.abs(h - lastH) < 2) return;       // ignore sub-pixel jitter
+      lastH = h;
+      parent.postMessage({ type: 'claude-widget-resize', height: h, src: location.href }, '*');
     }
-    new ResizeObserver(emit).observe(document.body);
+    new ResizeObserver(emit).observe(wrap);
     document.body.addEventListener('click', function () { setTimeout(emit, 50); }, true);
     emit();
   });
 </script>
 </head>
 <body>
+<div id="__widget_root">
 <!-- {{WIDGET_START}} -->
 <h2 class="sr-only">HTTP 常用方法与状态码交互式参考</h2>
 <style>
@@ -161,5 +165,6 @@ statuses.forEach(g => {
 });
 </script>
 <!-- {{WIDGET_END}} -->
+</div>
 </body>
 </html>
