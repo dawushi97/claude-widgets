@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>http methods and status codes</title>
+<link rel="stylesheet" href="../_shell/tokens.css">
+<style>
+  /* iframe-friendly tweaks (override host preset where needed) */
+  body { padding: 1rem 1.25rem; }
+</style>
+<script>
+  /* Polyfills for Claude-runtime-only globals */
+  window.sendPrompt = window.sendPrompt || function(text){
+    console.info('[sendPrompt polyfill]', text);
+    try { alert('sendPrompt:\n\n' + text); } catch(e) {}
+  };
+  window.openLink = window.openLink || function(url){ window.open(url, '_blank', 'noopener'); };
+</script>
+</head>
+<body>
+<!-- {{WIDGET_START}} -->
+<h2 class="sr-only">HTTP 常用方法与状态码交互式参考</h2>
+<style>
+  .panel{margin-bottom:1.5rem}
+  .panel-title{font-size:16px;font-weight:500;margin:0 0 12px;color:var(--color-text-primary)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+  .card{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px;cursor:pointer;border:0.5px solid transparent;transition:border-color .15s}
+  .card:hover{border-color:var(--color-border-secondary)}
+  .card.active{border-color:var(--color-border-info);background:var(--color-background-info)}
+  .card-label{font-size:14px;font-weight:500;margin:0 0 2px}
+  .card-desc{font-size:12px;color:var(--color-text-secondary);margin:0;line-height:1.4}
+  .card.active .card-desc{color:var(--color-text-info)}
+  .detail-box{background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-top:12px;min-height:70px;font-size:13px;line-height:1.7;color:var(--color-text-secondary);display:none}
+  .detail-box.show{display:block}
+  .detail-box b{color:var(--color-text-primary);font-weight:500}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:var(--border-radius-md);font-weight:500;margin-right:6px}
+  .b-safe{background:var(--color-background-success);color:var(--color-text-success)}
+  .b-unsafe{background:var(--color-background-warning);color:var(--color-text-warning)}
+  .b-idempotent{background:var(--color-background-info);color:var(--color-text-info)}
+  .status-group{margin-bottom:8px}
+  .status-header{font-size:13px;font-weight:500;padding:4px 0;color:var(--color-text-secondary)}
+  .sep{border:none;border-top:0.5px solid var(--color-border-tertiary);margin:1.5rem 0}
+</style>
+
+<div class="panel">
+  <p class="panel-title">HTTP 请求方法</p>
+  <div class="grid" id="methods"></div>
+  <div class="detail-box" id="method-detail"></div>
+</div>
+
+<hr class="sep">
+
+<div class="panel">
+  <p class="panel-title">HTTP 状态码</p>
+  <div id="statuses"></div>
+  <div class="detail-box" id="status-detail"></div>
+</div>
+
+<script>
+const methods = [
+  {name:'GET',short:'获取资源',detail:'最常用的方法。向服务器请求指定资源，不修改任何数据。浏览器输入网址、点击链接都是 GET 请求。',tags:['safe','idempotent']},
+  {name:'POST',short:'提交数据',detail:'向服务器提交数据以创建新资源。表单提交、上传文件、发送评论等都使用 POST。请求体中携带要提交的数据。',tags:['unsafe']},
+  {name:'PUT',short:'替换资源',detail:'用请求体中的数据完整替换目标资源。如果资源不存在则创建。多次执行结果相同（幂等）。',tags:['unsafe','idempotent']},
+  {name:'PATCH',short:'部分更新',detail:'对资源进行局部修改，只更新指定的字段，而非替换整个资源。适合只改一两个字段的场景。',tags:['unsafe']},
+  {name:'DELETE',short:'删除资源',detail:'请求服务器删除指定资源。多次执行结果相同——资源已经不存在了。',tags:['unsafe','idempotent']},
+  {name:'HEAD',short:'仅获取头部',detail:'和 GET 类似，但服务器只返回响应头，不返回响应体。常用于检查资源是否存在、获取文件大小等。',tags:['safe','idempotent']},
+  {name:'OPTIONS',short:'查询选项',detail:'询问服务器支持哪些方法和功能。浏览器在跨域请求（CORS）前会自动发送 OPTIONS 预检请求。',tags:['safe','idempotent']},
+];
+
+const statuses = [
+  {group:'2xx 成功',color:'var(--color-text-success)',items:[
+    {code:'200 OK',desc:'请求成功，服务器返回了所请求的数据'},
+    {code:'201 Created',desc:'资源创建成功（通常在 POST 后返回）'},
+    {code:'204 No Content',desc:'请求成功但没有返回内容（常见于 DELETE）'},
+  ]},
+  {group:'3xx 重定向',color:'var(--color-text-info)',items:[
+    {code:'301 Moved',desc:'资源已永久移到新地址，浏览器会自动跳转'},
+    {code:'304 Not Modified',desc:'资源未修改，使用浏览器缓存即可'},
+  ]},
+  {group:'4xx 客户端错误',color:'var(--color-text-warning)',items:[
+    {code:'400 Bad Request',desc:'请求格式有误，服务器无法理解'},
+    {code:'401 Unauthorized',desc:'需要身份认证（未登录）'},
+    {code:'403 Forbidden',desc:'服务器拒绝访问（没有权限）'},
+    {code:'404 Not Found',desc:'请求的资源不存在'},
+    {code:'429 Too Many',desc:'请求过于频繁，被限流'},
+  ]},
+  {group:'5xx 服务器错误',color:'var(--color-text-danger)',items:[
+    {code:'500 Internal Error',desc:'服务器内部出错'},
+    {code:'502 Bad Gateway',desc:'网关/代理收到上游无效响应'},
+    {code:'503 Unavailable',desc:'服务器暂时不可用（过载或维护中）'},
+  ]},
+];
+
+const tagMap = {safe:'安全',unsafe:'有副作用',idempotent:'幂等'};
+const tagCls = {safe:'b-safe',unsafe:'b-unsafe',idempotent:'b-idempotent'};
+
+const mEl = document.getElementById('methods');
+const mDet = document.getElementById('method-detail');
+methods.forEach((m,i) => {
+  const d = document.createElement('div');
+  d.className = 'card';
+  d.innerHTML = `<p class="card-label">${m.name}</p><p class="card-desc">${m.short}</p>`;
+  d.onclick = () => {
+    mEl.querySelectorAll('.card').forEach(c=>c.classList.remove('active'));
+    d.classList.add('active');
+    mDet.className = 'detail-box show';
+    mDet.innerHTML = '<b>'+m.name+'</b> — '+m.detail+'<div style="margin-top:8px">'+m.tags.map(t=>'<span class="badge '+tagCls[t]+'">'+tagMap[t]+'</span>').join('')+'</div>';
+  };
+  mEl.appendChild(d);
+});
+
+const sEl = document.getElementById('statuses');
+const sDet = document.getElementById('status-detail');
+statuses.forEach(g => {
+  const gd = document.createElement('div');
+  gd.className = 'status-group';
+  gd.innerHTML = '<p class="status-header" style="color:'+g.color+'">'+g.group+'</p>';
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  g.items.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML = `<p class="card-label" style="font-size:13px">${s.code}</p>`;
+    d.onclick = () => {
+      sEl.querySelectorAll('.card').forEach(c=>c.classList.remove('active'));
+      d.classList.add('active');
+      sDet.className = 'detail-box show';
+      sDet.innerHTML = '<b>'+s.code+'</b> — '+s.desc;
+    };
+    grid.appendChild(d);
+  });
+  gd.appendChild(grid);
+  sEl.appendChild(gd);
+});
+</script>
+<!-- {{WIDGET_END}} -->
+</body>
+</html>
