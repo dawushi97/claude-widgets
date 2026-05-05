@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="../_shell/tokens.css">
+<style>
+  /* iframe-friendly tweaks (override host preset where needed) */
+  body { padding: 1rem 1.25rem; }
+</style>
+<script>
+  /* Polyfills for Claude-runtime-only globals */
+  window.sendPrompt = window.sendPrompt || function(text){
+    console.info('[sendPrompt polyfill]', text);
+    try { alert('sendPrompt:\n\n' + text); } catch(e) {}
+  };
+  window.openLink = window.openLink || function(url){ window.open(url, '_blank', 'noopener'); };
+</script>
+</head>
+<body>
+<!-- {{WIDGET_START}} -->
+{{WIDGET}}
+<!-- {{WIDGET_END}} -->
+</body>
+</html>
