@@ -119,7 +119,8 @@ html, body {
 
 body {
   padding: 1rem 1.25rem;
-  min-height: 100vh;
+  /* No min-height: 100vh — it would create a feedback loop with parent
+     iframe auto-resize (body grows to viewport, viewport grows to body, …). */
 }
 
 h1 { font-size: var(--font-heading-xl-size);  line-height: var(--font-heading-xl-line-height);  font-weight: var(--font-weight-medium); margin: 0 0 0.75em; color: var(--color-text-primary); }

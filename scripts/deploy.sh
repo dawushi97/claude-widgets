@@ -49,7 +49,8 @@ awk -v title="$TITLE" -v widget_file="$SRC" '
 USER="$(gh api user --jq .login)"
 REPO="$(basename "$REPO_DIR")"
 URL="https://${USER}.github.io/${REPO}/widgets/${SLUG}.html"
-IFRAME="{{iframe: ${URL}}}"
+# Hiccup form so auto-resize works (iframe height managed by roam/js listener)
+IFRAME=":hiccup [:iframe {:src \"${URL}?theme=dark\" :width \"100%\" :height \"500\" :style {:border \"none\" :border-radius \"10px\"}}]"
 
 cd "$REPO_DIR"
 git add "widgets/$SLUG.html"
