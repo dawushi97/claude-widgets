@@ -23,6 +23,25 @@
   window.openLink = window.openLink || function (url) {
     window.open(url, '_blank', 'noopener');
   };
+
+  /* Auto-resize: broadcast scrollHeight to parent on every layout change.
+     Parent (Roam roam/js, etc.) can listen and update the iframe's height. */
+  window.addEventListener('load', function () {
+    var lastH = 0;
+    function emit() {
+      var h = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight
+      );
+      if (h !== lastH) {
+        lastH = h;
+        parent.postMessage({ type: 'claude-widget-resize', height: h, src: location.href }, '*');
+      }
+    }
+    new ResizeObserver(emit).observe(document.body);
+    document.body.addEventListener('click', function () { setTimeout(emit, 50); }, true);
+    emit();
+  });
 </script>
 </head>
 <body>
