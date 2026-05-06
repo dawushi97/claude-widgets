@@ -7,7 +7,12 @@
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve symlinks so REPO_DIR points at the real repo, not ~/.local/bin
+SCRIPT_PATH="$0"
+while [ -L "$SCRIPT_PATH" ]; do
+  SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+done
+REPO_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 SHELL_FILE="$REPO_DIR/_shell/shell.html"
 
 if [ $# -lt 1 ]; then
