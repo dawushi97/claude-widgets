@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>http headers explorer</title>
+<link rel="stylesheet" href="../_shell/tokens.css">
+<script>
+  /* Theme switcher: ?theme=dark | ?theme=light forces a mode.
+     Otherwise the page follows the OS preference (default of color-scheme: light dark). */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    if (t === 'dark' || t === 'light') {
+      document.documentElement.style.colorScheme = t;
+    }
+  })();
+
+  /* Polyfills for Claude-runtime-only globals */
+  window.sendPrompt = window.sendPrompt || function (text) {
+    console.info('[sendPrompt polyfill]', text);
+    try { alert('sendPrompt:\n\n' + text); } catch (e) {}
+  };
+  window.openLink = window.openLink || function (url) {
+    window.open(url, '_blank', 'noopener');
+  };
+
+  /* Auto-resize: broadcast the actual content height to parent on layout change.
+     We measure the content wrapper, NOT body/html (those echo the iframe size
+     back via 100vh/100% and create a feedback loop). */
+  window.addEventListener('load', function () {
+    var wrap = document.getElementById('__widget_root') || document.body;
+    var lastH = 0;
+    function emit() {
+      // getBoundingClientRect().height is layout-accurate and not affected by
+      // any "min-height: 100vh" cascading from parent-driven viewport changes.
+      var rect = wrap.getBoundingClientRect();
+      var h = Math.ceil(rect.height) +
+              parseFloat(getComputedStyle(document.body).paddingTop) +
+              parseFloat(getComputedStyle(document.body).paddingBottom);
+      if (Math.abs(h - lastH) < 2) return;       // ignore sub-pixel jitter
+      lastH = h;
+      parent.postMessage({ type: 'claude-widget-resize', height: h, src: location.href }, '*');
+    }
+    new ResizeObserver(emit).observe(wrap);
+    document.body.addEventListener('click', function () { setTimeout(emit, 50); }, true);
+    emit();
+  });
+</script>
+</head>
+<body>
+<div id="__widget_root">
+<!-- {{WIDGET_START}} -->
+<h2 class="sr-only">HTTP 头部字段交互式参考手册，按用途分类</h2>
+<style>
+  .intro{font-size:13px;color:var(--color-text-secondary);margin:0 0 16px;line-height:1.6}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{padding:6px 14px;border-radius:var(--border-radius-md);font-size:13px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);background:transparent;color:var(--color-text-secondary);transition:all .15s}
+  .tab:hover{border-color:var(--color-border-secondary);color:var(--color-text-primary)}
+  .tab.active{background:var(--color-text-primary);color:var(--color-background-primary);border-color:var(--color-text-primary)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:16px}
+  .card{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px;cursor:pointer;border:0.5px solid transparent;transition:border-color .15s}
+  .card:hover{border-color:var(--color-border-secondary)}
+  .card.active{border-color:var(--color-border-info);background:var(--color-background-info)}
+  .card-name{font-size:13px;font-weight:500;margin:0;font-family:var(--font-mono)}
+  .card.active .card-name{color:var(--color-text-info)}
+  .detail{background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:14px 18px;min-height:80px;font-size:13px;line-height:1.7;color:var(--color-text-secondary);display:none}
+  .detail.show{display:block}
+  .detail-name{font-size:15px;font-weight:500;color:var(--color-text-primary);margin:0 0 4px;font-family:var(--font-mono)}
+  .detail-tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:var(--border-radius-md);font-weight:500;margin-left:8px}
+  .tag-req{background:var(--color-background-info);color:var(--color-text-info)}
+  .tag-res{background:var(--color-background-success);color:var(--color-text-success)}
+  .tag-both{background:var(--color-background-warning);color:var(--color-text-warning)}
+  .detail-desc{margin:8px 0;color:var(--color-text-primary)}
+  .detail-example{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:8px 12px;font-family:var(--font-mono);font-size:12px;color:var(--color-text-primary);margin:8px 0;overflow-x:auto;white-space:nowrap}
+  .detail-meaning{color:var(--color-text-secondary);font-size:12px;margin:4px 0 0}
+</style>
+
+<p class="intro">HTTP 头部字段按用途可以分成 5 大类。点击任意字段可以查看含义、示例和实际作用。</p>
+
+<div class="tabs" id="tabs"></div>
+<div class="grid" id="grid"></div>
+<div class="detail" id="detail"></div>
+
+<script>
+const data = {
+  identity: {
+    label: '身份识别',
+    desc: '告诉对方"我是谁，从哪来"',
+    fields: [
+      {name:'Host',type:'req',desc:'告诉服务器你想访问哪个域名（同一台服务器可能托管多个网站，需要这个字段区分）。',example:'Host: www.example.com',meaning:'我要访问 www.example.com 这个网站'},
+      {name:'User-Agent',type:'req',desc:'客户端的"自我介绍"——告诉服务器我是什么浏览器/操作系统/版本。服务器可能据此返回适配的内容（比如手机版 vs 桌面版）。',example:'User-Agent: Mozilla/5.0 ... Chrome/120.0.0.0',meaning:'我是 Chrome 120 版本浏览器'},
+      {name:'Referer',type:'req',desc:'当前请求是从哪个页面跳过来的（注意拼写——历史遗留的拼写错误）。常用于流量来源统计、防盗链。',example:'Referer: https://google.com/search',meaning:'我是从谷歌搜索结果点过来的'},
+    ]
+  },
+  negotiation: {
+    label: '内容协商',
+    desc: '协商"传输什么格式的数据"',
+    fields: [
+      {name:'Accept',type:'req',desc:'客户端能接受哪些数据格式。服务器据此返回对应类型的内容。',example:'Accept: text/html, application/json',meaning:'我能处理 HTML 和 JSON'},
+      {name:'Accept-Language',type:'req',desc:'用户偏好的语言。服务器据此返回中文版或英文版页面。',example:'Accept-Language: zh-CN, en;q=0.8',meaning:'优先中文，其次英文'},
+      {name:'Accept-Encoding',type:'req',desc:'客户端支持哪些压缩算法。压缩可以大幅减少传输体积。',example:'Accept-Encoding: gzip, br',meaning:'我能解压 gzip 和 brotli 格式'},
+      {name:'Content-Type',type:'both',desc:'正文（body）的数据格式。请求中说明"我发的是什么"，响应中说明"我返回的是什么"。',example:'Content-Type: application/json; charset=utf-8',meaning:'正文是 UTF-8 编码的 JSON'},
+      {name:'Content-Length',type:'both',desc:'正文的字节长度。接收方据此知道要读多少字节。',example:'Content-Length: 348',meaning:'正文一共 348 字节'},
+    ]
+  },
+  cache: {
+    label: '缓存控制',
+    desc: '控制"是否要重新下载"',
+    fields: [
+      {name:'Cache-Control',type:'both',desc:'缓存策略的核心字段。max-age=N 表示资源在 N 秒内有效，浏览器无需重新请求。还有 no-cache（每次都验证）、no-store（不缓存）等指令。',example:'Cache-Control: max-age=3600',meaning:'这个资源 1 小时内可以直接用缓存'},
+      {name:'ETag',type:'res',desc:'资源的"指纹"（一段哈希值）。下次请求时浏览器带上这个值，服务器对比就知道资源有没有变。没变就返回 304，省流量。',example:'ETag: "abc123def456"',meaning:'这个资源的版本标识是 abc123def456'},
+      {name:'Last-Modified',type:'res',desc:'资源最后修改时间。和 ETag 类似，用于判断缓存是否还能用。',example:'Last-Modified: Mon, 02 May 2026 10:00:00 GMT',meaning:'资源最后修改于这个时间'},
+      {name:'Expires',type:'res',desc:'资源的过期时间点（HTTP/1.0 老字段，现在多用 Cache-Control 替代）。',example:'Expires: Mon, 02 May 2026 12:00:00 GMT',meaning:'到这个时间点之前可以用缓存'},
+    ]
+  },
+  session: {
+    label: '身份与会话',
+    desc: '处理"登录状态、权限"',
+    fields: [
+      {name:'Cookie',type:'req',desc:'浏览器把已存的 Cookie 发回服务器。前面讲过——这就是维持登录态的关键。',example:'Cookie: session_id=abc123; theme=dark',meaning:'附带两个 Cookie 给服务器'},
+      {name:'Set-Cookie',type:'res',desc:'服务器让浏览器存一个 Cookie。可以带过期时间、作用域、安全标记等属性。',example:'Set-Cookie: token=xyz; HttpOnly; Secure',meaning:'存一个不能被 JS 读取、只走 HTTPS 的安全 Cookie'},
+      {name:'Authorization',type:'req',desc:'携带身份认证凭据。常见的有 Bearer Token（JWT）和 Basic（用户名密码 base64）。比 Cookie 更适合 API 场景。',example:'Authorization: Bearer eyJhbGciOiJIUzI1...',meaning:'我的身份令牌是这串字符'},
+      {name:'WWW-Authenticate',type:'res',desc:'当返回 401 时，服务器用这个字段告诉客户端要用什么方式认证。',example:'WWW-Authenticate: Bearer realm="api"',meaning:'请用 Bearer 令牌方式认证'},
+    ]
+  },
+  connection: {
+    label: '连接管理',
+    desc: '管理"TCP 连接的生命周期"',
+    fields: [
+      {name:'Connection',type:'both',desc:'控制连接是否复用。keep-alive 表示请求完不要断开，下个请求继续用这条连接（避免反复 TCP 握手）。',example:'Connection: keep-alive',meaning:'这条连接发完别断，我还要继续用'},
+      {name:'Keep-Alive',type:'both',desc:'配合 Connection: keep-alive 使用，指定连接保持的参数。',example:'Keep-Alive: timeout=5, max=100',meaning:'空闲 5 秒就断，最多复用 100 次'},
+      {name:'Upgrade',type:'req',desc:'请求把当前协议升级到另一种协议，最常见的是从 HTTP 升级到 WebSocket。',example:'Upgrade: websocket',meaning:'我要切换到 WebSocket 协议'},
+    ]
+  }
+};
+
+const tabsEl = document.getElementById('tabs');
+const gridEl = document.getElementById('grid');
+const detailEl = document.getElementById('detail');
+
+const typeMap = {
+  req: {label:'请求头', cls:'tag-req'},
+  res: {label:'响应头', cls:'tag-res'},
+  both: {label:'请求/响应均可', cls:'tag-both'}
+};
+
+let currentCat = 'identity';
+
+function render() {
+  // tabs
+  tabsEl.innerHTML = '';
+  Object.entries(data).forEach(([key, cat]) => {
+    const t = document.createElement('button');
+    t.className = 'tab' + (key === currentCat ? ' active' : '');
+    t.textContent = cat.label;
+    t.onclick = () => { currentCat = key; render(); };
+    tabsEl.appendChild(t);
+  });
+
+  // grid
+  gridEl.innerHTML = '';
+  data[currentCat].fields.forEach(f => {
+    const c = document.createElement('div');
+    c.className = 'card';
+    c.innerHTML = '<p class="card-name">'+f.name+'</p>';
+    c.onclick = () => {
+      gridEl.querySelectorAll('.card').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+      const tag = typeMap[f.type];
+      detailEl.className = 'detail show';
+      detailEl.innerHTML =
+        '<p class="detail-name">'+f.name+'<span class="detail-tag '+tag.cls+'">'+tag.label+'</span></p>'+
+        '<p class="detail-desc">'+f.desc+'</p>'+
+        '<div class="detail-example">'+f.example+'</div>'+
+        '<p class="detail-meaning">↑ 含义：'+f.meaning+'</p>';
+    };
+    gridEl.appendChild(c);
+  });
+
+  // reset detail
+  detailEl.className = 'detail';
+  detailEl.innerHTML = '<p style="margin:24px 0;text-align:center;color:var(--color-text-tertiary)">点击上方任意字段查看详情</p>';
+  detailEl.classList.add('show');
+}
+
+render();
+</script>
+<!-- {{WIDGET_END}} -->
+</div>
+</body>
+</html>
