@@ -21,7 +21,13 @@
     try { alert('sendPrompt:\n\n' + text); } catch (e) {}
   };
   window.openLink = window.openLink || function (url) {
-    window.open(url, '_blank', 'noopener');
+    // Reject javascript:/data:/vbscript: URIs — only allow http(s)/mailto/tel.
+    var safe = /^(https?:|mailto:|tel:)/i;
+    if (typeof url !== 'string' || !safe.test(url)) {
+      console.warn('[openLink] blocked non-safe URL:', url);
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   /* Auto-resize: broadcast the actual content height to parent on layout change.

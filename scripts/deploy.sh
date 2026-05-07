@@ -7,10 +7,16 @@
 
 set -euo pipefail
 
-# Resolve symlinks so REPO_DIR points at the real repo, not ~/.local/bin
+# Resolve symlinks so REPO_DIR points at the real repo, not ~/.local/bin.
+# Handles symlink targets that are relative paths (e.g. ../../foo/deploy.sh).
 SCRIPT_PATH="$0"
 while [ -L "$SCRIPT_PATH" ]; do
+  DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
   SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+  case "$SCRIPT_PATH" in
+    /*) ;;                          # already absolute
+    *)  SCRIPT_PATH="$DIR/$SCRIPT_PATH" ;;
+  esac
 done
 REPO_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 SHELL_FILE="$REPO_DIR/_shell/shell.html"
@@ -30,14 +36,25 @@ else
   SLUG="$(basename "$SRC" .html | tr '_ ' '--' | tr '[:upper:]' '[:lower:]')"
 fi
 
+# Validate slug to prevent path-traversal / weird filenames
+case "$SLUG" in
+  *[!a-zA-Z0-9._-]* | "" | "." | ".." )
+    echo "Invalid slug: '$SLUG' (allowed: a-z A-Z 0-9 . _ -)" >&2
+    exit 1 ;;
+esac
+
 OUT="$REPO_DIR/widgets/$SLUG.html"
 mkdir -p "$REPO_DIR/widgets"
 
-# Title from filename (humanised)
-TITLE="$(basename "$SRC" .html | tr '_-' '  ')"
+# Title from filename (humanised). Strip HTML-significant chars to prevent
+# breaking the <title> tag, then escape '&' which awk's gsub treats as a
+# back-reference to the matched string.
+RAW_TITLE="$(basename "$SRC" .html | tr '_-' '  ')"
+SAFE_TITLE="$(printf '%s' "$RAW_TITLE" | tr -d '<>"&')"
 
-# Substitute {{TITLE}} and {{WIDGET}} (use awk to avoid sed escaping issues)
-awk -v title="$TITLE" -v widget_file="$SRC" '
+# Substitute {{TITLE}} and {{WIDGET}} (use awk to avoid sed escaping issues).
+# Note: TITLE has been pre-sanitised, so direct interpolation is safe.
+awk -v title="$SAFE_TITLE" -v widget_file="$SRC" '
   {
     line = $0
     gsub(/\{\{TITLE\}\}/, title, line)
@@ -57,12 +74,14 @@ URL="https://${USER}.github.io/${REPO}/widgets/${SLUG}.html"
 # Hiccup form so auto-resize works (iframe height managed by roam/js listener)
 IFRAME=":hiccup [:iframe {:src \"${URL}?theme=dark\" :width \"100%\" :height \"500\" :style {:border \"none\" :border-radius \"10px\"}}]"
 
+# Stage & commit ONLY the widget file so unrelated staged changes in the repo
+# don't get swept into this deploy commit.
 cd "$REPO_DIR"
-git add "widgets/$SLUG.html"
-if git diff --cached --quiet; then
+git add -- "widgets/$SLUG.html"
+if git diff --cached --quiet -- "widgets/$SLUG.html"; then
   echo "No changes to commit (widget already up-to-date)."
 else
-  git commit -m "deploy: $SLUG" >/dev/null
+  git commit -m "deploy: $SLUG" -- "widgets/$SLUG.html" >/dev/null
   git push -q
 fi
 
